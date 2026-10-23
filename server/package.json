@@ -11,6 +11,7 @@
     "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
+    "@netlify/database": "^2.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -19,6 +20,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "pg": "^8.13.1",
+    "serverless-http": "^4.0.0",
     "uuid": "^11.0.3"
   },
   "devDependencies": {
