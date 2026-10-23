@@ -29,11 +29,17 @@ export const dbConfig = {
 // Main application pool.
 // Local installs use DATABASE_URL / DB_* from .env. When deployed on Netlify
 // the managed Netlify Database is always used, never a localhost fallback.
+// Vercel Functions also set AWS_LAMBDA_FUNCTION_NAME, so exclude them explicitly.
 export const isNetlifyRuntime = Boolean(
-  process.env.NETLIFY || process.env.NETLIFY_DB_URL || process.env.AWS_LAMBDA_FUNCTION_NAME
+  !process.env.VERCEL &&
+    (process.env.NETLIFY || process.env.NETLIFY_DB_URL || process.env.AWS_LAMBDA_FUNCTION_NAME)
 );
 
 function createPool(): pg.Pool {
+  if (process.env.VERCEL && dbConfig.connectionString) {
+    return new Pool({ connectionString: dbConfig.connectionString, max: 5, idleTimeoutMillis: 10000 });
+  }
+
   if (isNetlifyRuntime || (!dbConfig.connectionString && !process.env.DB_HOST)) {
     try {
       return getDatabase().pool as unknown as pg.Pool;
