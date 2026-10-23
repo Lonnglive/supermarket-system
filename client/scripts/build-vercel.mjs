@@ -30,7 +30,7 @@ writeFileSync(resolve(funcDir, 'package.json'), JSON.stringify({ type: 'commonjs
 
 writeFileSync(
   resolve(funcDir, '.vc-config.json'),
-  JSON.stringify({ runtime: 'nodejs20.x', handler: 'index.js', launcherType: 'Nodejs', maxDuration: 30 }, null, 2)
+  JSON.stringify({ runtime: 'nodejs22.x', handler: 'index.js', launcherType: 'Nodejs', maxDuration: 30 }, null, 2)
 );
 
 writeFileSync(
