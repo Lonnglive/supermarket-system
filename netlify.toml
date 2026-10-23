@@ -1,0 +1,20 @@
+[build]
+  command = "npm --prefix server ci && npm --prefix client ci && npm --prefix client run build"
+  publish = "client/dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Express API served by the "api" function
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Single-page app fallback so deep links and refreshes load the React app
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

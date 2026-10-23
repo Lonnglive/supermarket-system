@@ -9,5 +9,8 @@
     "server:dev": "npm --prefix server run dev",
     "client:dev": "npm --prefix client run dev",
     "build": "npm --prefix server run build && npm --prefix client run build"
+  },
+  "dependencies": {
+    "@netlify/database": "^2.0.1"
   }
 }
