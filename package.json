@@ -8,6 +8,8 @@
     "db:setup": "npm --prefix server run migrate && npm --prefix server run seed",
     "server:dev": "npm --prefix server run dev",
     "client:dev": "npm --prefix client run dev",
-    "build": "npm --prefix server run build && npm --prefix client run build"
+    "build": "npm --prefix client run build && npm --prefix server run build",
+    "start": "node server/dist/index.js",
+    "migrate": "npm --prefix server run migrate"
   }
 }

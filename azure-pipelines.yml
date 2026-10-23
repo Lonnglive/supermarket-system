@@ -1,0 +1,103 @@
+# ==============================================================================
+# Azure DevOps CI/CD Pipeline - AeroPOS Supermarket System
+# ==============================================================================
+# This pipeline automates:
+# 1. Dependency installation & verification
+# 2. Building client React SPA and server TypeScript API
+# 3. Packaging into Docker image or deployment zip artifact
+# 4. Continuous Deployment to Azure App Service or Azure Container Apps
+# ==============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Replace with your Azure Resource values or Azure DevOps Library Variable Groups
+  azureSubscription: 'Azure-DevOps-Service-Connection'
+  azureWebAppName: 'aeropos-supermarket'
+  nodeVersion: '20.x'
+
+stages:
+  # ----------------------------------------------------------------------------
+  # Stage 1: CI (Continuous Integration - Build & Verify)
+  # ----------------------------------------------------------------------------
+  - stage: BuildAndTest
+    displayName: 'Build and Verify Application'
+    jobs:
+      - job: BuildJob
+        displayName: 'Install, Build and Package'
+        steps:
+          - task: NodeTool@0
+            displayName: 'Set Node.js Version'
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          # 1. Install & Build Client
+          - script: |
+              echo "==> Building Client Frontend..."
+              cd client
+              npm ci
+              npm run build
+            displayName: 'Build Client (Vite React)'
+
+          # 2. Install & Build Server
+          - script: |
+              echo "==> Building Server Backend..."
+              cd server
+              npm ci
+              npm run build
+            displayName: 'Build Server (TypeScript Express)'
+
+          # 3. Prepare deployment artifact
+          - script: |
+              echo "==> Preparing production bundle..."
+              mkdir -p dist-deploy
+              cp package.json dist-deploy/
+              cp -r server dist-deploy/
+              cp -r client/dist dist-deploy/client/
+            displayName: 'Stage Deployment Artifacts'
+
+          - task: ArchiveFiles@2
+            displayName: 'Zip Deployment Package'
+            inputs:
+              rootFolderOrFile: '$(System.DefaultWorkingDirectory)/dist-deploy'
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Build.ArtifactStagingDirectory)/aeropos-app.zip'
+              replaceExistingArchive: true
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Build Artifact'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)/aeropos-app.zip'
+              ArtifactName: 'drop'
+
+  # ----------------------------------------------------------------------------
+  # Stage 2: CD (Continuous Deployment - Azure App Service)
+  # ----------------------------------------------------------------------------
+  - stage: DeployToAzure
+    displayName: 'Deploy to Azure App Service'
+    dependsOn: BuildAndTest
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployWeb
+        displayName: 'Deploy Web App'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebApp@1
+                  displayName: 'Deploy to Azure Web App'
+                  inputs:
+                    azureSubscription: '$(azureSubscription)'
+                    appType: 'webAppLinux'
+                    appName: '$(azureWebAppName)'
+                    package: '$(Pipeline.Workspace)/drop/aeropos-app.zip'
+                    startUpCommand: 'cd server && npm install --production && cd .. && npm start'

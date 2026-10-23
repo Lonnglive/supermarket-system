@@ -17,19 +17,32 @@ export const dbConfig = {
   connectionString: process.env.DATABASE_URL
 };
 
+const useSsl = process.env.DB_SSL === 'true' ||
+  (Boolean(dbConfig.connectionString) && !dbConfig.connectionString?.includes('localhost') && !dbConfig.connectionString?.includes('127.0.0.1')) ||
+  (process.env.NODE_ENV === 'production' && dbConfig.host !== 'localhost' && dbConfig.host !== '127.0.0.1');
+
+const sslOption = useSsl ? { rejectUnauthorized: false } : undefined;
+
 // Main application pool
 export const pool = new Pool(
   dbConfig.connectionString
-    ? { connectionString: dbConfig.connectionString }
+    ? {
+        connectionString: dbConfig.connectionString,
+        ssl: sslOption,
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+      }
     : {
         host: dbConfig.host,
         port: dbConfig.port,
         database: dbConfig.database,
         user: dbConfig.user,
         password: dbConfig.password,
+        ssl: sslOption,
         max: 20,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
+        connectionTimeoutMillis: 10000,
       }
 );
 

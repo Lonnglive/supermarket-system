@@ -10,13 +10,26 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const { Client, Pool } = pg;
 
+const connectionString = process.env.DATABASE_URL;
 const dbHost = process.env.DB_HOST || 'localhost';
 const dbPort = parseInt(process.env.DB_PORT || '5432', 10);
 const dbUser = process.env.DB_USER || 'postgres';
 const dbPassword = process.env.DB_PASSWORD || '';
 const targetDb = process.env.DB_NAME || 'supermarket_db';
 
+const useSsl = process.env.DB_SSL === 'true' ||
+  (Boolean(connectionString) && !connectionString?.includes('localhost') && !connectionString?.includes('127.0.0.1')) ||
+  (process.env.NODE_ENV === 'production' && dbHost !== 'localhost' && dbHost !== '127.0.0.1');
+
+const sslOption = useSsl ? { rejectUnauthorized: false } : undefined;
+
 async function ensureDatabaseExists() {
+  // If a managed connectionString is provided or cloud DB, we may not have permission to connect to 'postgres'
+  if (connectionString) {
+    console.log(`[DB SETUP] Cloud DATABASE_URL provided. Connecting directly to target database.`);
+    return;
+  }
+
   console.log(`[DB SETUP] Checking if database "${targetDb}" exists on ${dbHost}:${dbPort}...`);
   
   const maintenanceClient = new Client({
@@ -24,7 +37,8 @@ async function ensureDatabaseExists() {
     port: dbPort,
     user: dbUser,
     password: dbPassword,
-    database: 'postgres'
+    database: 'postgres',
+    ssl: sslOption
   });
 
   try {
@@ -36,31 +50,35 @@ async function ensureDatabaseExists() {
 
     if (res.rowCount === 0) {
       console.log(`[DB SETUP] Database "${targetDb}" does not exist. Creating it now...`);
-      // CREATE DATABASE cannot be executed inside a transaction block
       await maintenanceClient.query(`CREATE DATABASE "${targetDb}"`);
       console.log(`[DB SETUP] Database "${targetDb}" created successfully!`);
     } else {
       console.log(`[DB SETUP] Database "${targetDb}" already exists.`);
     }
   } catch (err: any) {
-    console.error(`[DB SETUP] Error connecting to PostgreSQL:`, err.message);
-    console.error(`[DB SETUP] Please make sure PostgreSQL is running and DB_PASSWORD in your .env file is correct.`);
-    throw err;
+    console.warn(`[DB SETUP WARNING] Could not verify/create database via maintenance connection (${err.message}). Proceeding directly with target connection.`);
   } finally {
-    await maintenanceClient.end();
+    try {
+      await maintenanceClient.end();
+    } catch {}
   }
 }
 
 async function runMigrationsAndSeeds() {
   await ensureDatabaseExists();
 
-  const appPool = new Pool({
-    host: dbHost,
-    port: dbPort,
-    user: dbUser,
-    password: dbPassword,
-    database: targetDb
-  });
+  const appPool = new Pool(
+    connectionString
+      ? { connectionString, ssl: sslOption }
+      : {
+          host: dbHost,
+          port: dbPort,
+          user: dbUser,
+          password: dbPassword,
+          database: targetDb,
+          ssl: sslOption
+        }
+  );
 
   const client = await appPool.connect();
 

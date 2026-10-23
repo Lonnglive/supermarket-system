@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { testConnection } from './config/db.js';
 import apiRoutes from './routes/api.routes.js';
 import { initDailyReportScheduler } from './services/scheduler.service.js';
@@ -42,6 +43,28 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     database: dbHealth
   });
 });
+
+// Static client build serving (Production / Docker / Cloud single-service deployment)
+const candidateDistDirs = [
+  process.env.CLIENT_DIST_PATH,
+  path.resolve(__dirname, '../../client/dist'),
+  path.resolve(__dirname, '../client/dist'),
+  path.resolve(process.cwd(), 'client/dist'),
+  path.resolve(process.cwd(), '../client/dist')
+].filter(Boolean) as string[];
+
+const activeDistPath = candidateDistDirs.find(d => fs.existsSync(path.join(d, 'index.html')));
+
+if (activeDistPath) {
+  console.log(`[STATIC UI] Serving frontend assets from: ${activeDistPath}`);
+  app.use(express.static(activeDistPath));
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(activeDistPath, 'index.html'));
+  });
+}
 
 // Global Centralized Error Handler (Never expose raw stack trace)
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
