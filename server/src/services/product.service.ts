@@ -283,6 +283,35 @@ export async function deleteProduct(id: string, userId: string, ipAddress?: stri
   return { success: true, message: `Product "${res.rows[0].name}" deactivated.` };
 }
 
+export async function deleteMultipleProducts(ids: string[], userId: string, ipAddress?: string) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('No product IDs provided.');
+  }
+
+  const res = await pool.query(
+    `UPDATE products SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($1::uuid[]) RETURNING id, name`,
+    [ids]
+  );
+
+  for (const row of res.rows) {
+    logAuditAction({
+      userId,
+      action: 'PRODUCT_DEACTIVATED',
+      entity: 'products',
+      entityId: row.id,
+      oldValues: { is_active: true },
+      newValues: { is_active: false },
+      ipAddress
+    });
+  }
+
+  return {
+    success: true,
+    count: res.rowCount ?? res.rows.length,
+    message: `${res.rowCount ?? res.rows.length} product(s) deactivated successfully.`
+  };
+}
+
 // -----------------------------------------------------------------------------
 // CATEGORIES, SUPPLIERS, CUSTOMERS, UNITS
 // -----------------------------------------------------------------------------

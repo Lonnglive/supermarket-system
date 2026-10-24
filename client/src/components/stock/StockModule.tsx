@@ -44,6 +44,69 @@ export const StockModule: React.FC = () => {
   const [showClearStockModal, setShowClearStockModal] = useState(false);
   const [clearingStock, setClearingStock] = useState(false);
 
+  // Checkbox Selection & Deletion State
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const isAllSelected = products.length > 0 && selectedProductIds.length === products.length;
+  const isSomeSelected = selectedProductIds.length > 0 && selectedProductIds.length < products.length;
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(products.map(p => p.id));
+    }
+  };
+
+  const handleToggleSelectProduct = (id: string) => {
+    setSelectedProductIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleConfirmSingleDelete = async () => {
+    if (!deletingProduct) return;
+    setIsDeleting(true);
+    try {
+      await api.products.delete(deletingProduct.id);
+      showToast(`Product "${deletingProduct.name}" removed from stock.`);
+      setSelectedProductIds(prev => prev.filter(id => id !== deletingProduct.id));
+      setDeletingProduct(null);
+      loadCatalog();
+      loadDashboard();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete product', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+    setIsDeleting(true);
+    try {
+      const res = await api.products.deleteMultiple(selectedProductIds);
+      showToast(res.message || `${selectedProductIds.length} products removed from stock.`);
+      setSelectedProductIds([]);
+      setShowBulkDeleteModal(false);
+      loadCatalog();
+      loadDashboard();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete selected products', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Adjustment Form State
   const [adjProductId, setAdjProductId] = useState<string>('');
   const [adjNewQty, setAdjNewQty] = useState<number>(0);
@@ -69,7 +132,16 @@ export const StockModule: React.FC = () => {
     loadUnits();
     loadSuppliers();
     loadStockConfig();
-  }, []);
+
+    const handleStockUpdated = () => {
+      loadDashboard();
+      loadCatalog();
+      if (activeTab === 'movements') loadMovements();
+      if (activeTab === 'lowstock') loadLowStock();
+    };
+    window.addEventListener('aeropos_stock_updated', handleStockUpdated);
+    return () => window.removeEventListener('aeropos_stock_updated', handleStockUpdated);
+  }, [activeTab]);
 
   const loadStockConfig = async () => {
     try {
@@ -319,16 +391,34 @@ export const StockModule: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          top: 72,
+          right: 24,
+          zIndex: 9999,
+          background: toastMessage.type === 'success' ? '#064e3b' : '#881337',
+          border: `1px solid ${toastMessage.type === 'success' ? '#10b981' : '#f43f5e'}`,
+          color: 'white',
+          padding: '12px 18px',
+          borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontWeight: 600,
+          fontSize: 14,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          {toastMessage.type === 'success' ? <CheckCircle size={18} color="#34d399" /> : <AlertCircle size={18} color="#f87171" />}
+          <span>{toastMessage.text}</span>
+        </div>
+      )}
+
       {/* Top Dashboard Metrics Bar */}
-      <div style={{
-        background: '#0d131f',
-        borderBottom: '1px solid #1e293b',
-        padding: '12px 20px',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
-        gap: 12,
-        flexShrink: 0
-      }}>
+      <div className="stock-metrics-grid">
+
         {/* Total Products */}
         <div style={{
           background: 'var(--bg-card)',
@@ -449,17 +539,10 @@ export const StockModule: React.FC = () => {
       </div>
 
       {/* Navigation Sub-Tabs & Action Buttons */}
-      <div style={{
-        padding: '12px 20px',
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid #1e293b',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexShrink: 0
-      }}>
+      <div className="stock-actions-header">
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="stock-tabs-scroll">
+
           <button
             id="stock-tab-catalog"
             onClick={() => setActiveTab('catalog')}
@@ -525,7 +608,8 @@ export const StockModule: React.FC = () => {
         </div>
 
         {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div className="stock-actions-scroll">
+
           <button
             id="stock-btn-adjustment"
             onClick={() => {
@@ -648,9 +732,10 @@ export const StockModule: React.FC = () => {
           TAB 1: PRODUCT CATALOG
           --------------------------------------------------------------------- */}
       {activeTab === 'catalog' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 20 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 14 }}>
           {/* Filters */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+
             <div style={{
               flex: 1,
               display: 'flex',
@@ -709,11 +794,98 @@ export const StockModule: React.FC = () => {
             </select>
           </div>
 
+          {/* Bulk Action Toolbar when items are selected */}
+          {selectedProductIds.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              marginBottom: 12,
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              borderRadius: 8,
+              animation: 'fadeIn 0.2s ease-out',
+              flexWrap: 'wrap',
+              gap: 10
+            }}>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  fontWeight: 800,
+                  fontSize: 12
+                }}>
+                  {selectedProductIds.length} Selected
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600 }}>
+                  {selectedProductIds.length} product{selectedProductIds.length > 1 ? 's' : ''} selected in catalog
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProductIds([])}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid #475569',
+                    color: 'var(--text-secondary)',
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  id="stock-btn-delete-selected"
+                  type="button"
+                  onClick={() => setShowBulkDeleteModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    boxShadow: '0 4px 12px rgba(239, 68, 68, 0.35)'
+                  }}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete Selected ({selectedProductIds.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Products Table */}
-          <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-surface)', border: '1px solid #1e293b', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+          <div className="responsive-table-wrapper" style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid #1e293b', borderRadius: 8 }}>
+            <table style={{ minWidth: 900, width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+
               <thead>
                 <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid #2d3748', color: 'var(--text-secondary)' }}>
+                  <th style={{ width: 44, padding: '12px 14px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      id="stock-select-all-checkbox"
+                      checked={isAllSelected}
+                      ref={el => { if (el) el.indeterminate = isSomeSelected; }}
+                      onChange={handleToggleSelectAll}
+                      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#ef4444' }}
+                      title={isAllSelected ? 'Deselect all products' : 'Select all products'}
+                    />
+                  </th>
                   <th style={{ padding: '12px 16px' }}>Product Name</th>
                   <th style={{ padding: '12px 16px' }}>Barcode / SKU</th>
                   <th style={{ padding: '12px 16px' }}>Category</th>
@@ -730,9 +902,26 @@ export const StockModule: React.FC = () => {
                   const isOut = Number(p.current_stock) <= 0;
                   const isLow = Number(p.current_stock) <= Number(p.min_stock_level);
                   const totalSold = Number(p.total_sold || 0);
+                  const isSelected = selectedProductIds.includes(p.id);
 
                   return (
-                    <tr key={p.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                    <tr
+                      key={p.id}
+                      style={{
+                        borderBottom: '1px solid #1e293b',
+                        background: isSelected ? 'rgba(239, 68, 68, 0.08)' : undefined,
+                        transition: 'background 0.15s ease'
+                      }}
+                    >
+                      <td style={{ width: 44, padding: '12px 14px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectProduct(p.id)}
+                          style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#ef4444' }}
+                          aria-label={`Select ${p.name}`}
+                        />
+                      </td>
                       <td style={{ padding: '12px 16px', fontWeight: 600, color: 'white' }}>
                         {p.name}
                       </td>
@@ -786,24 +975,54 @@ export const StockModule: React.FC = () => {
                         </span>
                       </td>
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <button
-                          onClick={() => {
-                            setEditingProduct(p);
-                            setShowProductModal(true);
-                          }}
-                          style={{
-                            background: 'var(--bg-card)',
-                            border: '1px solid #334155',
-                            color: '#38bdf8',
-                            padding: '4px 8px',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            fontSize: 12,
-                            fontWeight: 600
-                          }}
-                        >
-                          Edit
-                        </button>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingProduct(p);
+                              setShowProductModal(true);
+                            }}
+                            title="Edit product"
+                            style={{
+                              background: 'var(--bg-card)',
+                              border: '1px solid #334155',
+                              color: '#38bdf8',
+                              padding: '5px 9px',
+                              borderRadius: 5,
+                              cursor: 'pointer',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                          >
+                            <Edit size={12} />
+                            <span>Edit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeletingProduct(p)}
+                            title="Delete product"
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              border: '1px solid rgba(239, 68, 68, 0.35)',
+                              color: '#f87171',
+                              padding: '5px 9px',
+                              borderRadius: 5,
+                              cursor: 'pointer',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                          >
+                            <Trash2 size={12} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -842,8 +1061,9 @@ export const StockModule: React.FC = () => {
             </select>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-surface)', border: '1px solid #1e293b', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+          <div className="responsive-table-wrapper" style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid #1e293b', borderRadius: 8 }}>
+            <table style={{ minWidth: 800, width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+
               <thead>
                 <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid #2d3748', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '12px 16px' }}>Date / Time</th>
@@ -907,9 +1127,10 @@ export const StockModule: React.FC = () => {
           TAB 3: LOW STOCK & REORDER ALERTS
           --------------------------------------------------------------------- */}
       {activeTab === 'lowstock' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 20 }}>
-          <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-surface)', border: '1px solid #1e293b', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 14 }}>
+          <div className="responsive-table-wrapper" style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid #1e293b', borderRadius: 8 }}>
+            <table style={{ minWidth: 700, width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+
               <thead>
                 <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid #2d3748', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '12px 16px' }}>Product</th>
@@ -1801,6 +2022,219 @@ export const StockModule: React.FC = () => {
                 }}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------------------
+          MODAL: CONFIRM SINGLE PRODUCT DELETE
+          --------------------------------------------------------------------- */}
+      {deletingProduct && (
+        <div className="modal-overlay" onClick={() => !isDeleting && setDeletingProduct(null)}>
+          <div className="modal-content" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f87171' }}>
+                <Trash2 size={20} />
+                <span>Delete Product from Stock</span>
+              </div>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingProduct(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 13.5, color: 'var(--text-primary)', margin: 0 }}>
+                Are you sure you want to delete this product from the inventory catalog?
+              </p>
+
+              <div style={{
+                background: 'var(--bg-card)',
+                border: '1px solid #334155',
+                borderRadius: 8,
+                padding: '12px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'white' }}>
+                  {deletingProduct.name}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 12 }}>
+                  <span>Barcode: <strong style={{ color: 'var(--text-soft)', fontFamily: 'JetBrains Mono' }}>{deletingProduct.barcode}</strong></span>
+                  <span>SKU: <strong style={{ color: 'var(--text-soft)', fontFamily: 'JetBrains Mono' }}>{deletingProduct.sku}</strong></span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Current Stock: <strong style={{ color: '#34d399' }}>{deletingProduct.current_stock} {deletingProduct.unit_name}</strong>
+                </div>
+              </div>
+
+              <div style={{
+                fontSize: 12,
+                color: '#fca5a5',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 6,
+                padding: '10px 12px',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start'
+              }}>
+                <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  This item will be removed from active stock. Past billing and sales records associated with this item will be safely preserved.
+                </span>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingProduct(null)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #334155',
+                  color: 'var(--text-secondary)',
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-single-delete"
+                disabled={isDeleting}
+                onClick={handleConfirmSingleDelete}
+                style={{
+                  background: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 18px',
+                  borderRadius: 6,
+                  fontWeight: 700,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Trash2 size={15} />
+                <span>{isDeleting ? 'Deleting...' : 'Delete Product'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------------------
+          MODAL: CONFIRM BULK PRODUCTS DELETE
+          --------------------------------------------------------------------- */}
+      {showBulkDeleteModal && (
+        <div className="modal-overlay" onClick={() => !isDeleting && setShowBulkDeleteModal(false)}>
+          <div className="modal-content" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f87171' }}>
+                <Trash2 size={20} />
+                <span>Delete {selectedProductIds.length} Selected Products</span>
+              </div>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowBulkDeleteModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 13.5, color: 'var(--text-primary)', margin: 0 }}>
+                You have selected <strong>{selectedProductIds.length} product(s)</strong> to delete.
+              </p>
+
+              <div style={{
+                maxHeight: 180,
+                overflowY: 'auto',
+                background: 'var(--bg-card)',
+                border: '1px solid #334155',
+                borderRadius: 8,
+                padding: '8px 12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6
+              }}>
+                {products.filter(p => selectedProductIds.includes(p.id)).map(p => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'white', padding: '4px 0', borderBottom: '1px solid #1e293b' }}>
+                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                    <span style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono' }}>{p.barcode}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{
+                fontSize: 12,
+                color: '#fca5a5',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 6,
+                padding: '10px 12px',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start'
+              }}>
+                <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  All {selectedProductIds.length} selected items will be deactivated from active stock and POS billing. Previous customer bills and audit ledgers will remain intact.
+                </span>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowBulkDeleteModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #334155',
+                  color: 'var(--text-secondary)',
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-bulk-delete"
+                disabled={isDeleting}
+                onClick={handleConfirmBulkDelete}
+                style={{
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 20px',
+                  borderRadius: 6,
+                  fontWeight: 700,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)'
+                }}
+              >
+                <Trash2 size={15} />
+                <span>{isDeleting ? 'Deleting Selected...' : `Delete All ${selectedProductIds.length} Products`}</span>
               </button>
             </div>
           </div>

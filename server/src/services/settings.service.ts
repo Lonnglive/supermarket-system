@@ -135,7 +135,7 @@ export async function getAllUsers() {
   const res = await pool.query(`
     SELECT 
       u.id, u.username, u.email, u.full_name, u.phone,
-      u.avatar_url, u.receive_daily_report,
+      u.avatar_url, u.receive_daily_report, u.requested_persona,
       u.is_active, u.failed_login_attempts, u.last_login_at, u.created_at,
       ARRAY_AGG(ur.role_id) as roles
     FROM users u

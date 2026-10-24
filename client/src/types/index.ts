@@ -167,3 +167,37 @@ export interface EmailSettings {
   daily_report_time: string;
   super_admin_email: string;
 }
+
+export interface ProposedAdjustment {
+  rawItem: string;
+  matchedProductId: string | null;
+  matchedProductName: string | null;
+  currentStock: number;
+  changeQuantity: number;
+  newStock: number;
+  adjustmentType: 'PHYSICAL_COUNT' | 'DAMAGED' | 'EXPIRED' | 'CORRECTION';
+  reason: string;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  status: 'READY' | 'NEEDS_MATCH' | 'ERROR';
+  note?: string;
+}
+
+export interface AiChatMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  imagePreview?: string;
+  extractedItems?: ProposedAdjustment[];
+  action?: 'PROPOSE_ADJUSTMENT' | 'GENERAL_CHAT' | 'INVENTORY_QUERY';
+  applied?: boolean;
+  appliedDocumentNumber?: string;
+}
+
+export interface AiStatusResponse {
+  configured: boolean;
+  model: string;
+  multimodalSupported: boolean;
+  capabilities: string[];
+}
+

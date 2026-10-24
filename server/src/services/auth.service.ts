@@ -25,7 +25,7 @@ function normalizeOtpDestination(identifier: string, channel?: string): { identi
     return { identifier: email, channel: 'EMAIL' };
   }
   const phone = value.replace(/[\s()-]/g, '');
-  if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error('Enter a mobile number in international format, for example +917339266006.');
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error('Enter a mobile number in international format, for example +917863475690.');
   return { identifier: phone, channel: 'PHONE' };
 }
 
@@ -79,6 +79,37 @@ async function deliverOtp(destination: { identifier: string; channel: OtpChannel
     body: JSON.stringify({ to: destination.identifier, message: `Your AeroPOS verification code is ${otp}. It expires in ${OTP_TTL_MINUTES} minutes.` })
   });
   if (!response.ok) throw new Error('Unable to send the mobile OTP. Please try again later.');
+}
+
+async function notifySuperAdminOfRegistration(request: { fullName: string; username: string; email: string | null; phone: string | null; persona: string }) {
+  const settings = await getEmailSettings();
+  const adminEmails = await pool.query(`
+    SELECT DISTINCT LOWER(TRIM(u.email)) AS email
+    FROM users u JOIN user_roles ur ON ur.user_id = u.id
+    WHERE ur.role_id = 'SUPER_ADMIN' AND u.is_active = TRUE AND TRIM(COALESCE(u.email, '')) <> ''
+  `);
+  const recipients = [...new Set([
+    settings.super_admin_email,
+    ...adminEmails.rows.map(row => row.email)
+  ].filter((email): email is string => Boolean(email && email.trim())).map(email => email.trim().toLowerCase()))];
+  if (!recipients.length) throw new Error('No Super Admin approval email is configured.');
+
+  const transporter = await createTransporter();
+  await transporter.sendMail({
+    from: `"${settings.sender_name || 'AeroPOS'}" <${settings.sender_email}>`,
+    to: recipients,
+    subject: `[Approval required] ${request.persona} account request from ${request.fullName}`,
+    text: [
+      'A verified account is waiting for Super Admin approval.',
+      `Requested role: ${request.persona}`,
+      `Name: ${request.fullName}`,
+      `Username: ${request.username}`,
+      `Email: ${request.email || 'Not provided'}`,
+      `Mobile: ${request.phone || 'Not provided'}`,
+      '',
+      'Open AeroPOS > Settings > User Management to review the role and activate the account.'
+    ].join('\n')
+  });
 }
 
 async function createOtpChallenge(purpose: OtpPurpose, identifier: string, channel?: string) {
@@ -356,28 +387,37 @@ export async function requestRegistrationOtp(data: { identifier: string; channel
   return createOtpChallenge('REGISTER', destination.identifier, destination.channel);
 }
 
-export async function registerUser(data: { fullName: string; username: string; password: string; identifier: string; channel?: string; otp: string; ipAddress?: string; userAgent?: string }) {
+export async function registerUser(data: { fullName: string; username: string; password: string; identifier: string; channel?: string; otp: string; persona?: 'SYSTEM_ADMIN' | 'STORE_MANAGER' | 'SUPER_ADMIN'; ipAddress?: string; userAgent?: string }) {
   if (!data.fullName?.trim() || !/^[a-zA-Z0-9_.-]{3,50}$/.test(data.username?.trim() || '')) throw new Error('Enter your full name and a username of at least 3 characters.');
   if (!data.password || data.password.length < 10 || !/[A-Z]/.test(data.password) || !/[a-z]/.test(data.password) || !/\d/.test(data.password)) {
     throw new Error('Use a password of at least 10 characters with uppercase, lowercase, and a number.');
   }
+  const persona = ['SYSTEM_ADMIN', 'STORE_MANAGER', 'SUPER_ADMIN'].includes(data.persona || '') ? data.persona! : 'SYSTEM_ADMIN';
   const destination = await consumeOtpChallenge('REGISTER', data.identifier, data.otp, data.channel);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const passwordHash = await bcrypt.hash(data.password, 12);
     const insert = await client.query(
-      `INSERT INTO users (username, email, password_hash, full_name, phone, is_active)
-       VALUES ($1, $2, $3, $4, $5, true) RETURNING id, username, email, full_name, phone, avatar_url`,
-      [data.username.trim(), destination.channel === 'EMAIL' ? destination.identifier : null, passwordHash, data.fullName.trim(), destination.channel === 'PHONE' ? destination.identifier : null]
+      `INSERT INTO users (username, email, password_hash, full_name, phone, requested_persona, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, false) RETURNING id, username, email, full_name, phone, avatar_url`,
+      [data.username.trim(), destination.channel === 'EMAIL' ? destination.identifier : null, passwordHash, data.fullName.trim(), destination.channel === 'PHONE' ? destination.identifier : null, persona]
     );
     const user = insert.rows[0];
-    await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, 'SYSTEM_ADMIN')`, [user.id]);
+    // A Super Admin request always starts with least privilege. An existing
+    // Super Admin must explicitly promote the account after reviewing it.
+    const initialRole = persona === 'STORE_MANAGER' ? 'STORE_MANAGER' : 'SYSTEM_ADMIN';
+    await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, [user.id, initialRole]);
+    await notifySuperAdminOfRegistration({
+      fullName: user.full_name,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      persona
+    });
     await client.query('COMMIT');
-    const { roles, permissions } = await getUserRolesAndPermissions(user.id);
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN as any });
-    await logAuditAction({ userId: user.id, username: user.username, action: 'AUTH_SELF_REGISTERED', entity: 'users', entityId: user.id, newValues: { channel: destination.channel, roles }, ipAddress: data.ipAddress, userAgent: data.userAgent });
-    return { token, user: { id: user.id, username: user.username, email: user.email, fullName: user.full_name, phone: user.phone, avatarUrl: user.avatar_url, roles, permissions } };
+    await logAuditAction({ userId: user.id, username: user.username, action: 'AUTH_SELF_REGISTERED_PENDING_APPROVAL', entity: 'users', entityId: user.id, newValues: { channel: destination.channel, persona }, ipAddress: data.ipAddress, userAgent: data.userAgent });
+    return { success: true, pendingApproval: true, message: 'Your account is verified and awaiting administrator approval.' };
   } catch (error: any) {
     await client.query('ROLLBACK');
     if (error?.code === '23505') throw new Error('That username or contact method is already in use.');

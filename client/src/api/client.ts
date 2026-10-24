@@ -1,6 +1,7 @@
 import {
   User, Product, StoreSettings, EmailSettings,
-  SaleSummary, InventoryMovement, Customer, Supplier, Category, Unit
+  SaleSummary, InventoryMovement, Customer, Supplier, Category, Unit,
+  ProposedAdjustment, AiStatusResponse
 } from '../types';
 
 const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '/api';
@@ -68,8 +69,8 @@ export const api = {
       }),
     requestRegistrationOtp: (identifier: string, channel: 'EMAIL' | 'PHONE') =>
       request<{ success: boolean; message: string }>('/auth/register/request-otp', { method: 'POST', body: JSON.stringify({ identifier, channel }) }),
-    register: (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) =>
-      request<{ token: string; user: User }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+    register: (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string; persona: 'SYSTEM_ADMIN' | 'STORE_MANAGER' | 'SUPER_ADMIN' }) =>
+      request<{ success: boolean; pendingApproval: boolean; message: string }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     getMe: () => request<{ user: User }>('/auth/me'),
     logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' })
   },
@@ -139,7 +140,8 @@ export const api = {
     },
     create: (data: any) => request<Product>('/products', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: any) => request<Product>(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => request<{ success: boolean }>(`/products/${id}`, { method: 'DELETE' }),
+    delete: (id: string) => request<{ success: boolean; message?: string }>(`/products/${id}`, { method: 'DELETE' }),
+    deleteMultiple: (ids: string[]) => request<{ success: boolean; count: number; message: string }>('/products/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
     getCategories: () => request<{ categories: Category[] }>('/categories'),
     createCategory: (data: { name: string; color?: string; position?: number }) => request<{ category: Category }>('/categories', { method: 'POST', body: JSON.stringify(data) }),
     updateCategory: (id: string, data: { name: string; color?: string }) => request<{ category: Category }>(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -226,5 +228,46 @@ export const api = {
   setup: {
     getStatus: () => request<{ isSetupComplete: boolean; hasDefaultPassword: boolean }>('/setup/status'),
     markComplete: () => request<{ success: boolean }>('/setup/complete', { method: 'POST' })
+  },
+
+  // AI Stock Assistant & Vision OCR
+  ai: {
+    getStatus: () => request<AiStatusResponse>('/ai/status'),
+    chat: (payload: {
+      message?: string;
+      image?: { data: string; mimeType: string };
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    }) => request<{
+      reply: string;
+      extractedItems: ProposedAdjustment[];
+      action: 'PROPOSE_ADJUSTMENT' | 'GENERAL_CHAT' | 'INVENTORY_QUERY';
+      rawOcrText?: string;
+    }>('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+    applyAdjustments: (adjustments: Array<{
+      productId: string;
+      changeQuantity?: number;
+      newQuantity?: number;
+      adjustmentType?: 'PHYSICAL_COUNT' | 'DAMAGED' | 'EXPIRED' | 'CORRECTION';
+      reason?: string;
+    }>) => request<{
+      success: boolean;
+      message: string;
+      results: Array<{
+        adjustmentNumber: string;
+        productId: string;
+        productName: string;
+        oldQuantity: number;
+        newQuantity: number;
+        difference: number;
+        adjustmentType: string;
+        reason: string;
+      }>;
+    }>('/ai/apply-adjustments', {
+      method: 'POST',
+      body: JSON.stringify({ adjustments })
+    })
   }
 };

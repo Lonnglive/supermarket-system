@@ -520,7 +520,8 @@ export const ReportsModule: React.FC = () => {
       {activeTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Top KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+          <div className="reports-kpi-grid">
+
             <div style={{ background: 'var(--bg-surface, #111827)', border: '1px solid var(--border-subtle, #1e293b)', borderRadius: 10, padding: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Net Sales Revenue
@@ -591,8 +592,9 @@ export const ReportsModule: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+            <div className="reports-payment-grid">
               {/* CASH COLLECTION */}
+
               <div style={{
                 background: '#0d1912',
                 border: '1px solid rgba(16, 185, 129, 0.35)',
@@ -720,41 +722,44 @@ export const ReportsModule: React.FC = () => {
               </button>
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-subtle, #2d3748)', color: 'var(--text-secondary, #94a3b8)' }}>
-                  <th style={{ textAlign: 'left', paddingBottom: 8 }}>Product</th>
-                  <th style={{ textAlign: 'center', paddingBottom: 8 }}>Quantity Sold</th>
-                  <th style={{ textAlign: 'right', paddingBottom: 8 }}>Total Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryData?.topProducts?.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
-                      No sales recorded on {selectedDate}.
-                    </td>
+            <div className="responsive-table-wrapper">
+              <table style={{ minWidth: 450, width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle, #2d3748)', color: 'var(--text-secondary, #94a3b8)' }}>
+                    <th style={{ textAlign: 'left', paddingBottom: 8 }}>Product</th>
+                    <th style={{ textAlign: 'center', paddingBottom: 8 }}>Quantity Sold</th>
+                    <th style={{ textAlign: 'right', paddingBottom: 8 }}>Total Revenue</th>
                   </tr>
-                ) : (
-                  summaryData?.topProducts?.map((p: any, idx: number) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '10px 0', color: 'var(--text-primary, #ffffff)', fontWeight: 600 }}>
-                        <span style={{ color: '#10b981', marginRight: 6 }}>#{idx + 1}</span> {p.product_name}
-                      </td>
-                      <td style={{ padding: '10px 0', textAlign: 'center', color: '#38bdf8', fontWeight: 800 }}>
-                        {Number(p.total_quantity).toFixed(0)}
-                      </td>
-                      <td style={{ padding: '10px 0', textAlign: 'right', fontFamily: 'JetBrains Mono', color: '#10b981', fontWeight: 800 }}>
-                        ₹{Number(p.total_revenue).toFixed(2)}
+                </thead>
+                <tbody>
+                  {summaryData?.topProducts?.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                        No sales recorded on {selectedDate}.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    summaryData?.topProducts?.map((p: any, idx: number) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <td style={{ padding: '10px 0', color: 'var(--text-primary, #ffffff)', fontWeight: 600 }}>
+                          <span style={{ color: '#10b981', marginRight: 6 }}>#{idx + 1}</span> {p.product_name}
+                        </td>
+                        <td style={{ padding: '10px 0', textAlign: 'center', color: '#38bdf8', fontWeight: 800 }}>
+                          {Number(p.total_quantity).toFixed(0)}
+                        </td>
+                        <td style={{ padding: '10px 0', textAlign: 'right', fontFamily: 'JetBrains Mono', color: '#10b981', fontWeight: 800 }}>
+                          ₹{Number(p.total_revenue).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
+
 
       {/* =========================================================================
           TAB 2: SOLD ITEMS CALCULATION (Complete item-wise sales report)
@@ -880,7 +885,9 @@ export const ReportsModule: React.FC = () => {
               </div>
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div className="responsive-table-wrapper">
+              <table style={{ minWidth: 800, width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border-subtle, #334155)', color: 'var(--text-secondary, #94a3b8)' }}>
                   <th style={{ textAlign: 'left', padding: '10px 8px' }}>#</th>
@@ -953,7 +960,9 @@ export const ReportsModule: React.FC = () => {
             </table>
           </div>
         </div>
-      )}
+      </div>
+    )}
+
 
       {/* =========================================================================
           TAB 3: DAILY SALES RECORD (Day-by-Day Historical Log)
@@ -1049,7 +1058,9 @@ export const ReportsModule: React.FC = () => {
               </div>
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div className="responsive-table-wrapper">
+              <table style={{ minWidth: 850, width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border-subtle, #334155)', color: 'var(--text-secondary, #94a3b8)' }}>
                   <th style={{ textAlign: 'left', padding: '10px 10px' }}>Sale Date</th>
@@ -1134,7 +1145,9 @@ export const ReportsModule: React.FC = () => {
             </table>
           </div>
         </div>
-      )}
+      </div>
+    )}
+
 
       {/* =========================================================================
           TAB 4: COMPLETED BILLS & TRANSACTIONS
@@ -1180,7 +1193,9 @@ export const ReportsModule: React.FC = () => {
             </div>
           </div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div className="responsive-table-wrapper">
+            <table style={{ minWidth: 750, width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-subtle, #334155)', color: 'var(--text-secondary, #94a3b8)' }}>
                 <th style={{ textAlign: 'left', padding: '10px 12px' }}>Invoice #</th>
@@ -1241,7 +1256,9 @@ export const ReportsModule: React.FC = () => {
             </tbody>
           </table>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
+
 };

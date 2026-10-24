@@ -12,8 +12,31 @@ import {
 export const SettingsModule: React.FC = () => {
   const { isSuperAdmin } = useAuth();
 
-  // Sub-sections: 'store' | 'stock-config' | 'categories' | 'email' | 'users' | 'audit' | 'backup'
-  const [section, setSection] = useState<'store' | 'stock-config' | 'categories' | 'email' | 'users' | 'audit' | 'backup'>('store');
+  // Sub-sections: 'store' | 'stock-config' | 'categories' | 'email' | 'users' | 'audit' | 'backup' | 'ai'
+  const [section, setSection] = useState<'store' | 'stock-config' | 'categories' | 'email' | 'users' | 'audit' | 'backup' | 'ai'>('store');
+
+  // Floating AI Assistant Settings
+  const [aiFloatingEnabled, setAiFloatingEnabled] = useState<boolean>(() => {
+    try {
+      const val = localStorage.getItem('aeropos_ai_floating_enabled');
+      return val === null ? true : val === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleAiFloating = (enabled: boolean) => {
+    setAiFloatingEnabled(enabled);
+    localStorage.setItem('aeropos_ai_floating_enabled', String(enabled));
+    window.dispatchEvent(new CustomEvent('aeropos_ai_settings_changed'));
+    showToast(enabled ? 'Floating AI Assistant widget enabled.' : 'Floating AI Assistant widget disabled.');
+  };
+
+  const handleResetAiPosition = () => {
+    localStorage.removeItem('aeropos_ai_fab_pos');
+    window.dispatchEvent(new CustomEvent('aeropos_ai_reset_pos'));
+    showToast('AI button position reset to bottom-right.');
+  };
 
   // Store Settings State
   const [store, setStore] = useState<StoreSettings | null>(null);
@@ -425,7 +448,7 @@ export const SettingsModule: React.FC = () => {
   const handleOpenEditUser = (u: any) => {
     setEditingUser({
       ...u,
-      roleId: u.roles?.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' : 'SYSTEM_ADMIN',
+      roleId: u.roles?.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' : u.roles?.includes('STORE_MANAGER') ? 'STORE_MANAGER' : 'SYSTEM_ADMIN',
       newPassword: ''
     });
     setShowEditUserModal(true);
@@ -509,7 +532,8 @@ export const SettingsModule: React.FC = () => {
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+    <div className="settings-layout">
+
       {/* Toast Notification */}
       {toastMessage && (
         <div style={{
@@ -535,15 +559,8 @@ export const SettingsModule: React.FC = () => {
       )}
 
       {/* Settings Navigation Sidebar */}
-      <div style={{
-        width: 240,
-        background: '#0d131f',
-        borderRight: '1px solid #1e293b',
-        padding: '16px 12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6
-      }}>
+      <div className="settings-sidebar">
+
         <button
           id="settings-tab-store"
           onClick={() => setSection('store')}
@@ -586,6 +603,28 @@ export const SettingsModule: React.FC = () => {
         >
           <SlidersHorizontal size={16} />
           <span>Stock Entry Fields</span>
+        </button>
+
+        <button
+          id="settings-tab-ai"
+          onClick={() => setSection('ai')}
+          style={{
+            background: section === 'ai' ? 'var(--bg-card)' : 'transparent',
+            color: section === 'ai' ? '#10b981' : 'var(--text-secondary)',
+            border: 'none',
+            padding: '10px 14px',
+            borderRadius: 6,
+            textAlign: 'left',
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10
+          }}
+        >
+          <Sparkles size={16} color={section === 'ai' ? '#10b981' : '#38bdf8'} />
+          <span>AeroAI Copilot</span>
         </button>
 
         {isSuperAdmin && (
@@ -704,7 +743,8 @@ export const SettingsModule: React.FC = () => {
       </div>
 
       {/* Main Settings Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+      <div className="settings-content">
+
         {/* -------------------------------------------------------------------
             SECTION: STORE & RECEIPT PROFILE
             ------------------------------------------------------------------- */}
@@ -1933,6 +1973,162 @@ export const SettingsModule: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* ---------------------------------------------------------------------
+            SUB-SECTION: AEROAI COPILOT SETTINGS
+            --------------------------------------------------------------------- */}
+        {section === 'ai' && (
+          <div style={{ maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(56, 189, 248, 0.08) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              borderRadius: 12,
+              padding: 22,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 8px 20px rgba(16, 185, 129, 0.4)'
+                }}>
+                  <Sparkles size={24} color="#ffffff" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 18, fontWeight: 800, color: 'white', margin: 0 }}>
+                    AeroAI Copilot & Vision Settings
+                  </h2>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                    Control floating chatbot visibility, drag position, and vision intelligence capabilities.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card: Floating Widget Visibility & Drag Controls */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid #1e293b',
+              borderRadius: 10,
+              padding: 20
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, borderBottom: '1px solid #222e42' }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'white' }}>
+                    Floating Draggable AI Chatbot Button
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    When enabled, the interactive AeroAI Copilot button floats on the screen. You can drag and place it anywhere you like.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button
+                    id="setting-toggle-ai-floating"
+                    onClick={() => handleToggleAiFloating(!aiFloatingEnabled)}
+                    style={{
+                      background: aiFloatingEnabled ? 'linear-gradient(135deg, #10b981, #059669)' : '#334155',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 18px',
+                      borderRadius: 999,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      boxShadow: aiFloatingEnabled ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <span style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      background: aiFloatingEnabled ? '#ffffff' : '#94a3b8',
+                      boxShadow: aiFloatingEnabled ? '0 0 8px #ffffff' : 'none'
+                    }} />
+                    <span>{aiFloatingEnabled ? 'Enabled (Visible)' : 'Disabled (Hidden)'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Drag Position Reset */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>
+                    Screen Placement / Drag Position
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    You can freely drag the floating pill or open modal across the viewport. Click reset to restore default bottom-right placement.
+                  </div>
+                </div>
+
+                <button
+                  id="setting-btn-reset-ai-pos"
+                  onClick={handleResetAiPosition}
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid #334155',
+                    color: '#38bdf8',
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <RefreshCw size={14} />
+                  <span>Reset Position</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Card: AI Capabilities & Vision Engine Details */}
+            <div style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid #1e293b',
+              borderRadius: 10,
+              padding: 20
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 14 }}>
+                Active AI Multimodal Vision Engine
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                <div style={{ background: 'var(--bg-card)', padding: 14, borderRadius: 8, border: '1px solid #1e293b' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Model Version</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#10b981', marginTop: 4 }}>Google Gemini 3.8 Multimodal</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>High-precision multimodal vision & reasoning</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-card)', padding: 14, borderRadius: 8, border: '1px solid #1e293b' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Handwritten Notes</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>Full Handwriting OCR</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>Upload camera photos of slips, count sheets & notes</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-card)', padding: 14, borderRadius: 8, border: '1px solid #1e293b' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Stock Ledger Link</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#a855f7', marginTop: 4 }}>Live Cloud PostgreSQL</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>Direct one-click approval & database update</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ---------------------------------------------------------------------
@@ -2028,6 +2224,7 @@ export const SettingsModule: React.FC = () => {
                       style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #334155', borderRadius: 6, color: 'white', padding: 8 }}
                     >
                       <option value="SYSTEM_ADMIN">System Admin (Billing & Stock)</option>
+                      <option value="STORE_MANAGER">Store Manager (Inventory & Reports)</option>
                       <option value="SUPER_ADMIN">Super Admin (Unrestricted Full Access)</option>
                     </select>
                   </div>
@@ -2136,6 +2333,7 @@ export const SettingsModule: React.FC = () => {
                       style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #334155', borderRadius: 6, color: 'white', padding: 8 }}
                     >
                       <option value="SYSTEM_ADMIN">System Admin</option>
+                      <option value="STORE_MANAGER">Store Manager</option>
                       <option value="SUPER_ADMIN">Super Admin</option>
                     </select>
                   </div>

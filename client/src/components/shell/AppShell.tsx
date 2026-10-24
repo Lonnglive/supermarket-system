@@ -4,8 +4,9 @@ import { api } from '../../api/client';
 import { StoreSettings } from '../../types';
 import {
   ShoppingCart, Boxes, BarChart3, Settings,
-  LogOut, Clock, Sun, Moon, AlertCircle
+  LogOut, Clock, Sun, Moon, AlertCircle, Sparkles
 } from 'lucide-react';
+import { AiStockAssistantModal } from '../ai';
 
 interface AppShellProps {
   activeModule: 'billing' | 'stock' | 'reports' | 'settings';
@@ -22,6 +23,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [currentTime, setCurrentTime] = useState(new Date());
   const [deniedMessage, setDeniedMessage] = useState<string | null>(null);
   const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
+  const [isAiOpen, setIsAiOpen] = useState(false);
 
   // Theme: 'dark' | 'light'
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -191,8 +193,38 @@ export const AppShell: React.FC<AppShellProps> = ({
           )}
         </nav>
 
-        {/* Header Right: Theme Toggle, Clock, User, Role, Logout */}
+        {/* Header Right: AI Assistant, Theme Toggle, Clock, User, Role, Logout */}
         <div className="header-right">
+          {/* AI Stock Copilot Header Button */}
+          <button
+            id="btn-nav-ai-assistant"
+            className="theme-toggle-btn"
+            style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(56, 189, 248, 0.18) 100%)',
+              borderColor: 'rgba(16, 185, 129, 0.5)',
+              color: '#10b981',
+              padding: '0 12px',
+              width: 'auto',
+              gap: 6
+            }}
+            onClick={() => setIsAiOpen(true)}
+            title="Open AeroAI Stock Assistant (Handwritten Notes & OCR)"
+          >
+            <Sparkles size={16} color="#10b981" />
+            <span style={{ fontSize: 12, fontWeight: 700 }}>AI Stock Copilot</span>
+          </button>
+
+          {/* AeroAI Copilot Header Shortcut */}
+          <button
+            id="header-btn-aeroai"
+            className="theme-toggle-btn"
+            onClick={() => setIsAiOpen(true)}
+            title="Open AeroAI Copilot (Vision & Stock AI)"
+            style={{ color: '#10b981' }}
+          >
+            <Sparkles size={17} />
+          </button>
+
           {/* Light / Dark Mode Toggle */}
           <button
             id="btn-toggle-theme"
@@ -240,9 +272,57 @@ export const AppShell: React.FC<AppShellProps> = ({
       </header>
 
       {/* Main Content Area */}
-      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <main className="app-main-content" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {children}
       </main>
+
+      {/* Mobile Bottom Navigation Bar (< 768px) */}
+      <nav className="mobile-bottom-nav">
+        <button
+          id="mobile-nav-billing"
+          className={`mobile-nav-btn ${activeModule === 'billing' ? 'active' : ''}`}
+          onClick={() => handleModuleSwitch('billing')}
+        >
+          <ShoppingCart size={18} />
+          <span>Billing</span>
+        </button>
+
+        <button
+          id="mobile-nav-stock"
+          className={`mobile-nav-btn ${activeModule === 'stock' ? 'active' : ''}`}
+          onClick={() => handleModuleSwitch('stock')}
+        >
+          <Boxes size={18} />
+          <span>Stock</span>
+        </button>
+
+        <button
+          id="mobile-nav-reports"
+          className={`mobile-nav-btn ${activeModule === 'reports' ? 'active' : ''}`}
+          onClick={() => handleModuleSwitch('reports')}
+        >
+          <BarChart3 size={18} />
+          <span>Reports</span>
+        </button>
+
+        {(isSuperAdmin || hasPermission('settings.view')) && (
+          <button
+            id="mobile-nav-settings"
+            className={`mobile-nav-btn ${activeModule === 'settings' ? 'active' : ''}`}
+            onClick={() => handleModuleSwitch('settings')}
+          >
+            <Settings size={18} />
+            <span>Settings</span>
+          </button>
+        )}
+      </nav>
+
+      {/* AeroAI Stock Assistant Modal & Floating Widget */}
+      <AiStockAssistantModal
+        isOpen={isAiOpen}
+        onOpen={() => setIsAiOpen(true)}
+        onClose={() => setIsAiOpen(false)}
+      />
     </div>
   );
 };

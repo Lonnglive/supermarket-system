@@ -6,8 +6,10 @@ import { Product, Category, Customer, SaleSummary, StoreSettings } from '../../t
 import {
   Barcode, Search, Plus, Minus, Trash2, CreditCard,
   Banknote, Smartphone, PauseCircle, PlayCircle, Printer,
-  User, CheckCircle2, AlertTriangle, X, RefreshCw, Download, FileText, Check
+  User, CheckCircle2, AlertTriangle, X, RefreshCw, Download, FileText, Check,
+  ShoppingCart
 } from 'lucide-react';
+
 
 export const BillingModule: React.FC = () => {
   const {
@@ -28,6 +30,8 @@ export const BillingModule: React.FC = () => {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const [mobileViewTab, setMobileViewTab] = useState<'catalog' | 'cart'>('catalog');
+
 
   // Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -468,6 +472,29 @@ export const BillingModule: React.FC = () => {
 
   return (
     <div className="billing-layout">
+      {/* Mobile View Switcher Tabs (< 768px) */}
+      <div className="pos-mobile-view-tabs">
+        <button
+          type="button"
+          id="mobile-tab-catalog"
+          className={`pos-mobile-tab-btn ${mobileViewTab === 'catalog' ? 'active' : ''}`}
+          onClick={() => setMobileViewTab('catalog')}
+        >
+          <Barcode size={16} />
+          <span>Catalog & Scan</span>
+        </button>
+        <button
+          type="button"
+          id="mobile-tab-cart"
+          className={`pos-mobile-tab-btn ${mobileViewTab === 'cart' ? 'active' : ''}`}
+          onClick={() => setMobileViewTab('cart')}
+        >
+          <ShoppingCart size={16} />
+          <span>Cart ({totalItemsCount})</span>
+          {grandTotal > 0 && <span className="mobile-cart-badge">₹{grandTotal.toFixed(0)}</span>}
+        </button>
+      </div>
+
       {/* On-screen Notification Toast */}
       {saveToast && (
         <div style={{
@@ -495,7 +522,8 @@ export const BillingModule: React.FC = () => {
       {/* ---------------------------------------------------------------------
           LEFT / MAIN AREA: SCANNER, CATEGORIES, PRODUCT CATALOG
           --------------------------------------------------------------------- */}
-      <div className="billing-main-area">
+      <div className={`billing-main-area ${mobileViewTab !== 'catalog' ? 'mobile-hidden' : ''}`}>
+
         {/* Scanning & Search Bar */}
         <div className="scan-bar-section">
           <form onSubmit={handleBarcodeSubmit} className="barcode-input-container">
@@ -630,8 +658,22 @@ export const BillingModule: React.FC = () => {
           })}
         </div>
 
-        {/* Keyboard Shortcuts Hint Bar */}
-        <div style={{
+        {/* Floating Quick Cart Bar on Mobile when items are present */}
+        {totalItemsCount > 0 && (
+          <div className="pos-mobile-floating-cart-bar" onClick={() => setMobileViewTab('cart')}>
+            <div className="mobile-cart-bar-info">
+              <span className="mobile-cart-bar-count">{totalItemsCount} {totalItemsCount === 1 ? 'item' : 'items'} in cart</span>
+              <span className="mobile-cart-bar-total">₹{grandTotal.toFixed(2)}</span>
+            </div>
+            <button className="mobile-cart-bar-btn" type="button">
+              <span>View Cart & Pay</span>
+              <span>→</span>
+            </button>
+          </div>
+        )}
+
+        {/* Keyboard Shortcuts Hint Bar (Desktop only) */}
+        <div className="pos-shortcuts-bar" style={{
           padding: '8px 16px',
           background: 'var(--bg-input)',
           borderTop: '1px solid #1e293b',
@@ -656,7 +698,18 @@ export const BillingModule: React.FC = () => {
       {/* ---------------------------------------------------------------------
           RIGHT AREA: ACTIVE CART & CHECKOUT
           --------------------------------------------------------------------- */}
-      <div className="billing-cart-panel">
+      <div className={`billing-cart-panel ${mobileViewTab !== 'cart' ? 'mobile-hidden' : ''}`}>
+        {/* Mobile Back Button to Catalog */}
+        <div className="mobile-cart-back-bar">
+          <button
+            type="button"
+            className="mobile-back-to-catalog-btn"
+            onClick={() => setMobileViewTab('catalog')}
+          >
+            ← Add More Items / Barcode Scan
+          </button>
+        </div>
+
         {/* Cart Header */}
         <div className="cart-header">
           <div className="cart-header-title">

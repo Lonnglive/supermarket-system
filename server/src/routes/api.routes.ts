@@ -9,6 +9,7 @@ import * as emailService from '../services/email.service.js';
 import * as settingsService from '../services/settings.service.js';
 import { getAuditLogs } from '../services/audit.service.js';
 import { restartDailyReportScheduler } from '../services/scheduler.service.js';
+import * as aiService from '../services/ai.service.js';
 
 const router = Router();
 
@@ -317,6 +318,16 @@ router.delete('/products/:id', authenticate, requirePermission('products.delete'
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: 'Failed to deactivate product', message: err.message });
+  }
+});
+
+router.post('/products/bulk-delete', authenticate, requirePermission('products.delete'), async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    const result = await productService.deleteMultipleProducts(ids, req.user!.id, req.ip);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: 'Failed to bulk deactivate products', message: err.message });
   }
 });
 
@@ -636,6 +647,62 @@ router.get('/settings/audit', authenticate, requirePermission('audit.view'), asy
     res.json(logs);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch audit logs', message: err.message });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// AI STOCK ASSISTANT (Gemini Vision + Inventory Intelligence)
+// -----------------------------------------------------------------------------
+
+router.get('/ai/status', authenticate, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const configured = !!(process.env.GEMINI_API_KEY);
+    res.json({
+      configured,
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+      multimodalSupported: true,
+      capabilities: [
+        'Handwritten note OCR',
+        'Natural language stock adjustments',
+        'Fuzzy product name matching',
+        'Low stock queries',
+        'Inventory valuation reports'
+      ]
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'AI Status Error', message: err.message });
+  }
+});
+
+router.post('/ai/chat', authenticate, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { message, image, history } = req.body;
+    if (!message && !image) {
+      res.status(400).json({ error: 'Validation Error', message: 'Provide at least a message or an image.' });
+      return;
+    }
+    const result = await aiService.processAiChat({ message, image, history });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: 'AI Chat Error', message: err.message });
+  }
+});
+
+router.post('/ai/apply-adjustments', authenticate, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { adjustments } = req.body;
+    if (!Array.isArray(adjustments) || adjustments.length === 0) {
+      res.status(400).json({ error: 'Validation Error', message: 'Provide a non-empty adjustments array.' });
+      return;
+    }
+    const result = await aiService.applyBulkAdjustments({
+      adjustments,
+      userId: req.user!.id,
+      ipAddress: req.ip
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Apply Adjustments Error', message: err.message });
   }
 });
 

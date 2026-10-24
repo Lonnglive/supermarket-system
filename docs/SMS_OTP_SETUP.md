@@ -14,6 +14,6 @@ TWILIO_PHONE_NUMBER=+14155550100
 
 3. Restart the server after saving `.env`.
 
-Use full E.164 numbers in the app, such as `+917339266006`. Twilio trial accounts can send only to verified destination numbers; upgrade the account for unrestricted delivery.
+Use full E.164 numbers in the app, such as `+917863475690`. Twilio trial accounts can send only to verified destination numbers; upgrade the account for unrestricted delivery.
 
 Never put these credentials in the client `.env` or commit them to source control.

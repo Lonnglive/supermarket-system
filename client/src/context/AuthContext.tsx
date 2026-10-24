@@ -9,7 +9,7 @@ interface AuthContextType {
   hasDefaultPassword: boolean;
   login: (credentials: { usernameOrEmail: string; password: string }) => Promise<void>;
   loginWithOtp: (credentials: { identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => Promise<void>;
-  register: (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => Promise<void>;
+  register: (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string; persona: 'SYSTEM_ADMIN' | 'STORE_MANAGER' | 'SUPER_ADMIN' }) => Promise<string>;
   logout: () => void;
   hasPermission: (permissionId: string) => boolean;
   isSuperAdmin: boolean;
@@ -80,11 +80,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await checkSetupStatus();
   };
 
-  const register = async (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => {
+  const register = async (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string; persona: 'SYSTEM_ADMIN' | 'STORE_MANAGER' | 'SUPER_ADMIN' }) => {
     const res = await api.auth.register(data);
-    setAuthToken(res.token);
-    setUser(res.user);
-    await checkSetupStatus();
+    return res.message;
   };
 
   const logout = () => {

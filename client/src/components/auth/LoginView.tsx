@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 
 type Mode = 'PASSWORD' | 'OTP' | 'REGISTER';
 type Channel = 'EMAIL' | 'PHONE';
+type Persona = 'SYSTEM_ADMIN' | 'STORE_MANAGER' | 'SUPER_ADMIN';
 
 const fieldStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #334155', borderRadius: 8, color: 'white', fontSize: 14, outline: 'none', padding: '11px 13px' };
 const buttonStyle: React.CSSProperties = { border: 'none', borderRadius: 8, padding: 13, fontWeight: 800, fontSize: 14, cursor: 'pointer' };
@@ -16,7 +17,7 @@ const ContactMethod: React.FC<{
   onIdentifierChange: (identifier: string) => void;
 }> = ({ channel, identifier, onChannelChange, onIdentifierChange }) => {
   const contactLabel = channel === 'EMAIL' ? 'Gmail or email address' : 'Mobile number';
-  const contactPlaceholder = channel === 'EMAIL' ? 'you@gmail.com' : '+917339266006';
+  const contactPlaceholder = channel === 'EMAIL' ? 'you@gmail.com' : '+917863475690';
   return <>
     <div style={{ display: 'flex', gap: 8 }}>
       {(['EMAIL', 'PHONE'] as Channel[]).map(value => <button key={value} type="button" onClick={() => onChannelChange(value)} style={{ ...buttonStyle, flex: 1, padding: 9, background: channel === value ? '#065f46' : 'var(--bg-input)', border: `1px solid ${channel === value ? '#10b981' : '#334155'}`, color: channel === value ? '#a7f3d0' : 'var(--text-muted)' }}>
@@ -41,6 +42,7 @@ export const LoginView: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [persona, setPersona] = useState<Persona>('SYSTEM_ADMIN');
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -89,7 +91,12 @@ export const LoginView: React.FC = () => {
   const submitRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setError(null);
-    try { await register({ fullName, username: newUsername, password: newPassword, identifier: identifier.trim(), channel, otp: otp.trim() }); }
+    try {
+      const result = await register({ fullName, username: newUsername, password: newPassword, identifier: identifier.trim(), channel, otp: otp.trim(), persona });
+      setMessage(result);
+      setOtpSent(false);
+      setOtp('');
+    }
     catch (err: any) { setError(err.message || 'Account creation failed.'); }
     finally { setLoading(false); }
   };
@@ -118,10 +125,21 @@ export const LoginView: React.FC = () => {
           {otpSent && <><label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>6-digit verification code</label><input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} autoComplete="one-time-code" placeholder="123456" style={{ ...fieldStyle, letterSpacing: 5, fontWeight: 700 }} /><button disabled={loading || otp.length !== 6} style={{ ...buttonStyle, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#062417' }}>{loading ? 'Verifying…' : 'Verify & sign in'}</button></>}
         </form>}
         {mode === 'REGISTER' && <form onSubmit={submitRegistration} style={{ display: 'grid', gap: 12 }}>
-          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 13 }}>Create a verified staff account. New accounts receive standard cashier access.</p>
+          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 13 }}>Choose the access level you need. Every new account requires administrator approval before it can sign in.</p>
           <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Full name" autoComplete="name" style={fieldStyle} />
           <input value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="Username (3+ characters)" autoComplete="username" style={fieldStyle} />
           <div style={{ position: 'relative' }}><input type={showPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password (10+ characters)" autoComplete="new-password" style={{ ...fieldStyle, paddingRight: 45 }} /><button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 9, top: 10, color: '#94a3b8', background: 'none', border: 'none' }}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
+          <div style={{ display: 'grid', gap: 7 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Requested persona</label>
+            {([
+              ['SYSTEM_ADMIN', 'System Admin', 'POS billing, customers, and day-to-day operations'],
+              ['STORE_MANAGER', 'Store Manager', 'Inventory, products, and reports'],
+              ['SUPER_ADMIN', 'Super Admin', 'Requests full access; approval is always required']
+            ] as [Persona, string, string][]).map(([value, title, description]) => <label key={value} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: 10, cursor: 'pointer', background: persona === value ? '#064e3b' : 'var(--bg-input)', border: `1px solid ${persona === value ? '#10b981' : '#334155'}`, borderRadius: 8 }}>
+              <input type="radio" name="persona" checked={persona === value} onChange={() => setPersona(value)} style={{ marginTop: 3, accentColor: '#10b981' }} />
+              <span><strong style={{ color: persona === value ? '#a7f3d0' : 'white', fontSize: 13 }}>{title}</strong><small style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{description}</small></span>
+            </label>)}
+          </div>
           <ContactMethod {...contactMethodProps} />
           <button type="button" disabled={loading} onClick={() => requestOtp(true)} style={{ ...buttonStyle, background: 'var(--bg-card)', border: '1px solid #10b981', color: '#6ee7b7' }}>{loading ? 'Sending…' : otpSent ? 'Resend verification code' : 'Verify contact'}</button>
           {otpSent && <><input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} autoComplete="one-time-code" placeholder="6-digit verification code" style={{ ...fieldStyle, letterSpacing: 4 }} /><button disabled={loading || otp.length !== 6} style={{ ...buttonStyle, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#062417' }}>{loading ? 'Creating account…' : <><UserPlus size={16} style={{ verticalAlign: 'middle' }} /> Create verified account</>}</button></>}
