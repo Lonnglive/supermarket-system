@@ -1615,7 +1615,7 @@ export const SettingsModule: React.FC = () => {
                               color: isPassRevealed ? '#34d399' : 'var(--text-secondary)',
                               letterSpacing: isPassRevealed ? 'normal' : '0.12em'
                             }}>
-                              {isPassRevealed ? (u.viewable_password || 'Admin@123') : '••••••••'}
+                              {isPassRevealed ? 'Password is not stored in readable form' : '••••••••'}
                             </span>
                             <button
                               type="button"
@@ -2151,7 +2151,7 @@ export const SettingsModule: React.FC = () => {
                     type="text"
                     value={editingUser.newPassword || ''}
                     onChange={e => setEditingUser({ ...editingUser, newPassword: e.target.value })}
-                    placeholder={`Current password: ${editingUser.viewable_password || 'Admin@123'}`}
+                    placeholder="Enter your current password"
                     style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid #334155', borderRadius: 6, color: 'white', padding: 8 }}
                   />
                 </div>

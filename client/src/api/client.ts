@@ -56,16 +56,20 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(credentials)
       }),
-    sendOtp: (phone: string) =>
-      request<{ success: boolean; message: string; devOtp?: string; userPreview?: any }>('/auth/otp/send', {
+    sendOtp: (identifier: string, channel: 'EMAIL' | 'PHONE') =>
+      request<{ success: boolean; message: string }>('/auth/otp/send', {
         method: 'POST',
-        body: JSON.stringify({ phone })
+        body: JSON.stringify({ identifier, channel })
       }),
-    verifyOtp: (credentials: { phone: string; otp: string }) =>
+    verifyOtp: (credentials: { identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) =>
       request<{ token: string; user: User }>('/auth/otp/verify', {
         method: 'POST',
         body: JSON.stringify(credentials)
       }),
+    requestRegistrationOtp: (identifier: string, channel: 'EMAIL' | 'PHONE') =>
+      request<{ success: boolean; message: string }>('/auth/register/request-otp', { method: 'POST', body: JSON.stringify({ identifier, channel }) }),
+    register: (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) =>
+      request<{ token: string; user: User }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     getMe: () => request<{ user: User }>('/auth/me'),
     logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' })
   },

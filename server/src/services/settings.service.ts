@@ -135,7 +135,7 @@ export async function getAllUsers() {
   const res = await pool.query(`
     SELECT 
       u.id, u.username, u.email, u.full_name, u.phone,
-      u.avatar_url, u.viewable_password, u.receive_daily_report,
+      u.avatar_url, u.receive_daily_report,
       u.is_active, u.failed_login_attempts, u.last_login_at, u.created_at,
       ARRAY_AGG(ur.role_id) as roles
     FROM users u
@@ -163,14 +163,13 @@ export async function createUser(data: {
     const passHash = await bcrypt.hash(data.password, 12);
 
     const userRes = await client.query(
-      `INSERT INTO users (username, email, password_hash, viewable_password, full_name, phone, avatar_url, receive_daily_report, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-       RETURNING id, username, email, full_name, avatar_url, viewable_password, receive_daily_report, is_active`,
+      `INSERT INTO users (username, email, password_hash, full_name, phone, avatar_url, receive_daily_report, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+       RETURNING id, username, email, full_name, avatar_url, receive_daily_report, is_active`,
       [
         data.username.trim(),
         data.email.trim(),
         passHash,
-        data.password,
         data.fullName.trim(),
         data.phone || null,
         data.avatarUrl || null,
@@ -229,12 +228,10 @@ export async function updateUser(
     const existing = existingRes.rows[0];
 
     let newHash = existing.password_hash;
-    let newViewablePassword = existing.viewable_password;
 
     if (data.password && data.password.trim().length > 0) {
       if (data.password.length < 6) throw new Error('Password must be at least 6 characters.');
       newHash = await bcrypt.hash(data.password, 12);
-      newViewablePassword = data.password;
     }
 
     const updateQuery = `
@@ -246,10 +243,9 @@ export async function updateUser(
           avatar_url = COALESCE($5, avatar_url),
           receive_daily_report = COALESCE($6, receive_daily_report),
           password_hash = $7,
-          viewable_password = $8,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9
-      RETURNING id, username, email, full_name, phone, avatar_url, viewable_password, receive_daily_report, is_active
+      WHERE id = $8
+      RETURNING id, username, email, full_name, phone, avatar_url, receive_daily_report, is_active
     `;
 
     const updatedUserRes = await client.query(updateQuery, [
@@ -260,7 +256,6 @@ export async function updateUser(
       data.avatarUrl !== undefined ? data.avatarUrl : null,
       data.receiveDailyReport,
       newHash,
-      newViewablePassword,
       userId
     ]);
 
@@ -336,8 +331,8 @@ export async function changeUserPassword(
 
   const newHash = await bcrypt.hash(newPassword, 12);
   await pool.query(
-    `UPDATE users SET password_hash = $1, viewable_password = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
-    [newHash, newPassword, userId]
+    `UPDATE users SET password_hash = $1, viewable_password = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+    [newHash, userId]
   );
 
   logAuditAction({

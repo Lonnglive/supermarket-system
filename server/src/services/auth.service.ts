@@ -1,12 +1,131 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { pool } from '../config/db.js';
 import { logAuditAction } from './audit.service.js';
+import { createTransporter, getEmailSettings } from './email.service.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'aeropos_supermarket_jwt_secret_key_change_in_production_2026_xyz';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '12h';
 const FAILED_LOGIN_LIMIT = parseInt(process.env.FAILED_LOGIN_LIMIT || '5', 10);
 const LOCKOUT_MINUTES = parseInt(process.env.LOCKOUT_TIME_MINUTES || '15', 10);
+const OTP_TTL_MINUTES = parseInt(process.env.OTP_TTL_MINUTES || '10', 10);
+const OTP_MAX_ATTEMPTS = parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10);
+const OTP_RESEND_SECONDS = parseInt(process.env.OTP_RESEND_SECONDS || '60', 10);
+
+type OtpChannel = 'EMAIL' | 'PHONE';
+type OtpPurpose = 'LOGIN' | 'REGISTER';
+
+function normalizeOtpDestination(identifier: string, channel?: string): { identifier: string; channel: OtpChannel } {
+  const value = identifier.trim();
+  const inferredChannel: OtpChannel = channel?.toUpperCase() === 'EMAIL' || (!channel && value.includes('@')) ? 'EMAIL' : 'PHONE';
+  if (inferredChannel === 'EMAIL') {
+    const email = value.toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid Gmail or email address.');
+    return { identifier: email, channel: 'EMAIL' };
+  }
+  const phone = value.replace(/[\s()-]/g, '');
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error('Enter a mobile number in international format, for example +917339266006.');
+  return { identifier: phone, channel: 'PHONE' };
+}
+
+async function deliverOtp(destination: { identifier: string; channel: OtpChannel }, otp: string) {
+  if (destination.channel === 'EMAIL') {
+    const settings = await getEmailSettings();
+    const transporter = await createTransporter();
+    await transporter.sendMail({
+      from: `"${settings.sender_name || 'AeroPOS'}" <${settings.sender_email}>`,
+      to: destination.identifier,
+      subject: 'Your AeroPOS verification code',
+      text: `Your AeroPOS verification code is ${otp}. It expires in ${OTP_TTL_MINUTES} minutes. Do not share this code.`,
+      html: `<p>Your AeroPOS verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${otp}</p><p>It expires in ${OTP_TTL_MINUTES} minutes. Do not share this code.</p>`
+    });
+    return;
+  }
+
+  // Recommended production option: Twilio Programmable Messaging. The OTP is
+  // generated and validated by this service; Twilio is only used as delivery.
+  if ((process.env.SMS_PROVIDER || '').toLowerCase() === 'twilio') {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const from = process.env.TWILIO_PHONE_NUMBER;
+    if (!accountSid || !authToken || !from) {
+      throw new Error('Mobile OTP is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER.');
+    }
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        To: destination.identifier,
+        From: from,
+        Body: `Your AeroPOS verification code is ${otp}. It expires in ${OTP_TTL_MINUTES} minutes. Do not share this code.`
+      }).toString()
+    });
+    if (!response.ok) {
+      console.error('[TWILIO OTP ERROR]', await response.text());
+      throw new Error('Unable to send the mobile OTP. Check your Twilio configuration and phone number.');
+    }
+    return;
+  }
+
+  const webhookUrl = process.env.SMS_OTP_WEBHOOK_URL;
+  if (!webhookUrl) throw new Error('Mobile OTP is not configured. Set SMS_PROVIDER=twilio with Twilio credentials, or configure SMS_OTP_WEBHOOK_URL.');
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(process.env.SMS_OTP_WEBHOOK_TOKEN ? { Authorization: `Bearer ${process.env.SMS_OTP_WEBHOOK_TOKEN}` } : {}) },
+    body: JSON.stringify({ to: destination.identifier, message: `Your AeroPOS verification code is ${otp}. It expires in ${OTP_TTL_MINUTES} minutes.` })
+  });
+  if (!response.ok) throw new Error('Unable to send the mobile OTP. Please try again later.');
+}
+
+async function createOtpChallenge(purpose: OtpPurpose, identifier: string, channel?: string) {
+  const destination = normalizeOtpDestination(identifier, channel);
+  const recent = await pool.query(
+    `SELECT created_at FROM auth_otp_challenges WHERE purpose = $1 AND channel = $2 AND identifier = $3 ORDER BY created_at DESC LIMIT 1`,
+    [purpose, destination.channel, destination.identifier]
+  );
+  if (recent.rowCount && Date.now() - new Date(recent.rows[0].created_at).getTime() < OTP_RESEND_SECONDS * 1000) {
+    throw new Error(`Please wait ${OTP_RESEND_SECONDS} seconds before requesting another code.`);
+  }
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  const otpHash = await bcrypt.hash(otp, 12);
+  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+  await pool.query(
+    `INSERT INTO auth_otp_challenges (purpose, channel, identifier, otp_hash, expires_at) VALUES ($1, $2, $3, $4, $5)`,
+    [purpose, destination.channel, destination.identifier, otpHash, expiresAt]
+  );
+  try {
+    await deliverOtp(destination, otp);
+  } catch (error) {
+    await pool.query(`DELETE FROM auth_otp_challenges WHERE purpose = $1 AND channel = $2 AND identifier = $3 AND otp_hash = $4`, [purpose, destination.channel, destination.identifier, otpHash]);
+    throw error;
+  }
+  return { success: true, message: `A verification code was sent to your ${destination.channel === 'EMAIL' ? 'email address' : 'mobile number'}.` };
+}
+
+async function consumeOtpChallenge(purpose: OtpPurpose, identifier: string, otp: string, channel?: string) {
+  const destination = normalizeOtpDestination(identifier, channel);
+  const result = await pool.query(
+    `SELECT * FROM auth_otp_challenges WHERE purpose = $1 AND channel = $2 AND identifier = $3 AND consumed_at IS NULL AND expires_at > CURRENT_TIMESTAMP ORDER BY created_at DESC LIMIT 1`,
+    [purpose, destination.channel, destination.identifier]
+  );
+  if (!result.rowCount) throw new Error('This code is invalid or has expired. Request a new one.');
+  const challenge = result.rows[0];
+  if (challenge.attempts >= OTP_MAX_ATTEMPTS) throw new Error('Too many invalid attempts. Request a new code.');
+  if (!await bcrypt.compare(otp.trim(), challenge.otp_hash)) {
+    await pool.query(`UPDATE auth_otp_challenges SET attempts = attempts + 1 WHERE id = $1`, [challenge.id]);
+    throw new Error('This verification code is invalid.');
+  }
+  const consumed = await pool.query(
+    `UPDATE auth_otp_challenges SET consumed_at = CURRENT_TIMESTAMP WHERE id = $1 AND consumed_at IS NULL RETURNING id`,
+    [challenge.id]
+  );
+  if (!consumed.rowCount) throw new Error('This verification code has already been used.');
+  return destination;
+}
 
 async function getUserRolesAndPermissions(userId: string) {
   const rolesRes = await pool.query(
@@ -155,86 +274,29 @@ export async function loginUser(credentials: {
 // -----------------------------------------------------------------------------
 // PHONE OTP LOGIN
 // -----------------------------------------------------------------------------
-export async function sendPhoneOtp(phone: string) {
-  const cleanPhone = phone.trim();
-  if (!cleanPhone) throw new Error('Phone number is required.');
-
-  // Find user by phone number
+export async function sendLoginOtp(identifier: string, channel?: string) {
+  const destination = normalizeOtpDestination(identifier, channel);
   const userRes = await pool.query(
-    `SELECT id, username, full_name, phone, is_active FROM users 
-     WHERE phone = $1 OR phone = $2 OR REPLACE(phone, ' ', '') = $3
-     ORDER BY is_active DESC LIMIT 1`,
-    [cleanPhone, cleanPhone.replace(/\D/g, ''), cleanPhone.replace(/\s+/g, '')]
+    `SELECT id, is_active FROM users WHERE ${destination.channel === 'EMAIL' ? 'LOWER(email) = $1' : "REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = $1"} LIMIT 1`,
+    [destination.identifier]
   );
-
-  if (userRes.rowCount === 0) {
-    throw new Error('No active staff user registered with this phone number.');
-  }
-
-  const user = userRes.rows[0];
-  if (!user.is_active) {
-    throw new Error('Account associated with this phone is deactivated.');
-  }
-
-  // Generate 6-digit OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-  // Store in database
-  await pool.query('DELETE FROM phone_otps WHERE phone = $1', [cleanPhone]);
-  await pool.query(
-    `INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES ($1, $2, $3)`,
-    [cleanPhone, otpCode, expiresAt]
-  );
-
-  return {
-    success: true,
-    message: `OTP sent to ${cleanPhone}`,
-    // Returned in response for immediate testing in local / demo environments
-    devOtp: otpCode,
-    userPreview: {
-      username: user.username,
-      fullName: user.full_name
-    }
-  };
+  if (!userRes.rowCount || !userRes.rows[0].is_active) throw new Error('No active account is registered with that contact method.');
+  return createOtpChallenge('LOGIN', destination.identifier, destination.channel);
 }
 
-export async function verifyPhoneOtp(credentials: {
-  phone: string;
+export async function verifyLoginOtp(credentials: {
+  identifier: string;
   otp: string;
+  channel?: string;
   ipAddress?: string;
   userAgent?: string;
 }) {
-  const cleanPhone = credentials.phone.trim();
-  const cleanOtp = credentials.otp.trim();
-
-  if (!cleanPhone || !cleanOtp) {
-    throw new Error('Phone number and OTP code are required.');
-  }
-
-  // Validate OTP
-  const otpRes = await pool.query(
-    `SELECT * FROM phone_otps 
-     WHERE (phone = $1 OR phone = $2 OR REPLACE(phone, ' ', '') = $3)
-       AND otp_code = $4 
-       AND expires_at > CURRENT_TIMESTAMP 
-     ORDER BY created_at DESC LIMIT 1`,
-    [cleanPhone, cleanPhone.replace(/\D/g, ''), cleanPhone.replace(/\s+/g, ''), cleanOtp]
-  );
-
-  if (otpRes.rowCount === 0) {
-    throw new Error('Invalid or expired OTP code.');
-  }
-
-  // Remove used OTP
-  await pool.query('DELETE FROM phone_otps WHERE phone = $1', [cleanPhone]);
-
-  // Retrieve user
+  const destination = await consumeOtpChallenge('LOGIN', credentials.identifier, credentials.otp, credentials.channel);
   const userRes = await pool.query(
     `SELECT id, username, email, full_name, phone, avatar_url, is_active FROM users 
-     WHERE phone = $1 OR phone = $2 OR REPLACE(phone, ' ', '') = $3
-     ORDER BY is_active DESC LIMIT 1`,
-    [cleanPhone, cleanPhone.replace(/\D/g, ''), cleanPhone.replace(/\s+/g, '')]
+     WHERE ${destination.channel === 'EMAIL' ? 'LOWER(email) = $1' : "REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = $1"}
+     LIMIT 1`,
+    [destination.identifier]
   );
 
   if (userRes.rowCount === 0) throw new Error('User not found.');
@@ -264,7 +326,7 @@ export async function verifyPhoneOtp(credentials: {
     action: 'AUTH_OTP_LOGIN_SUCCESS',
     entity: 'users',
     entityId: user.id,
-    newValues: { phone: cleanPhone, roles },
+    newValues: { channel: destination.channel, roles },
     ipAddress: credentials.ipAddress,
     userAgent: credentials.userAgent
   });
@@ -282,6 +344,47 @@ export async function verifyPhoneOtp(credentials: {
       permissions
     }
   };
+}
+
+export async function requestRegistrationOtp(data: { identifier: string; channel?: string }) {
+  const destination = normalizeOtpDestination(data.identifier, data.channel);
+  const existing = await pool.query(
+    `SELECT id FROM users WHERE ${destination.channel === 'EMAIL' ? 'LOWER(email) = $1' : "REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = $1"} LIMIT 1`,
+    [destination.identifier]
+  );
+  if (existing.rowCount) throw new Error('An account already exists with this contact method. Please sign in.');
+  return createOtpChallenge('REGISTER', destination.identifier, destination.channel);
+}
+
+export async function registerUser(data: { fullName: string; username: string; password: string; identifier: string; channel?: string; otp: string; ipAddress?: string; userAgent?: string }) {
+  if (!data.fullName?.trim() || !/^[a-zA-Z0-9_.-]{3,50}$/.test(data.username?.trim() || '')) throw new Error('Enter your full name and a username of at least 3 characters.');
+  if (!data.password || data.password.length < 10 || !/[A-Z]/.test(data.password) || !/[a-z]/.test(data.password) || !/\d/.test(data.password)) {
+    throw new Error('Use a password of at least 10 characters with uppercase, lowercase, and a number.');
+  }
+  const destination = await consumeOtpChallenge('REGISTER', data.identifier, data.otp, data.channel);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const passwordHash = await bcrypt.hash(data.password, 12);
+    const insert = await client.query(
+      `INSERT INTO users (username, email, password_hash, full_name, phone, is_active)
+       VALUES ($1, $2, $3, $4, $5, true) RETURNING id, username, email, full_name, phone, avatar_url`,
+      [data.username.trim(), destination.channel === 'EMAIL' ? destination.identifier : null, passwordHash, data.fullName.trim(), destination.channel === 'PHONE' ? destination.identifier : null]
+    );
+    const user = insert.rows[0];
+    await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, 'SYSTEM_ADMIN')`, [user.id]);
+    await client.query('COMMIT');
+    const { roles, permissions } = await getUserRolesAndPermissions(user.id);
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN as any });
+    await logAuditAction({ userId: user.id, username: user.username, action: 'AUTH_SELF_REGISTERED', entity: 'users', entityId: user.id, newValues: { channel: destination.channel, roles }, ipAddress: data.ipAddress, userAgent: data.userAgent });
+    return { token, user: { id: user.id, username: user.username, email: user.email, fullName: user.full_name, phone: user.phone, avatarUrl: user.avatar_url, roles, permissions } };
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error?.code === '23505') throw new Error('That username or contact method is already in use.');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getCurrentUser(userId: string) {

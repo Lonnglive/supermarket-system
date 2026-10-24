@@ -8,7 +8,8 @@ interface AuthContextType {
   needsSetup: boolean;
   hasDefaultPassword: boolean;
   login: (credentials: { usernameOrEmail: string; password: string }) => Promise<void>;
-  loginWithOtp: (credentials: { phone: string; otp: string }) => Promise<void>;
+  loginWithOtp: (credentials: { identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => Promise<void>;
+  register: (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => Promise<void>;
   logout: () => void;
   hasPermission: (permissionId: string) => boolean;
   isSuperAdmin: boolean;
@@ -72,8 +73,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await checkSetupStatus();
   };
 
-  const loginWithOtp = async (credentials: { phone: string; otp: string }) => {
+  const loginWithOtp = async (credentials: { identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => {
     const res = await api.auth.verifyOtp(credentials);
+    setAuthToken(res.token);
+    setUser(res.user);
+    await checkSetupStatus();
+  };
+
+  const register = async (data: { fullName: string; username: string; password: string; identifier: string; channel: 'EMAIL' | 'PHONE'; otp: string }) => {
+    const res = await api.auth.register(data);
     setAuthToken(res.token);
     setUser(res.user);
     await checkSetupStatus();
@@ -109,6 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hasDefaultPassword,
         login,
         loginWithOtp,
+        register,
         logout,
         hasPermission,
         isSuperAdmin,

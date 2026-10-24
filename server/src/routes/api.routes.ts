@@ -59,12 +59,12 @@ router.post('/auth/login', async (req: Request, res: Response): Promise<void> =>
 
 router.post('/auth/otp/send', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { phone } = req.body;
-    if (!phone) {
-      res.status(400).json({ error: 'Validation Error', message: 'Phone number is required.' });
+    const { identifier, channel, phone } = req.body;
+    if (!(identifier || phone)) {
+      res.status(400).json({ error: 'Validation Error', message: 'Mobile number or Gmail address is required.' });
       return;
     }
-    const result = await authService.sendPhoneOtp(phone);
+    const result = await authService.sendLoginOtp(identifier || phone, channel);
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: 'Failed to send OTP', message: err.message });
@@ -73,13 +73,14 @@ router.post('/auth/otp/send', async (req: Request, res: Response): Promise<void>
 
 router.post('/auth/otp/verify', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { phone, otp } = req.body;
-    if (!phone || !otp) {
-      res.status(400).json({ error: 'Validation Error', message: 'Phone number and OTP are required.' });
+    const { identifier, channel, phone, otp } = req.body;
+    if (!(identifier || phone) || !otp) {
+      res.status(400).json({ error: 'Validation Error', message: 'Mobile number or Gmail address and OTP are required.' });
       return;
     }
-    const result = await authService.verifyPhoneOtp({
-      phone,
+    const result = await authService.verifyLoginOtp({
+      identifier: identifier || phone,
+      channel,
       otp,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent']
@@ -87,6 +88,28 @@ router.post('/auth/otp/verify', async (req: Request, res: Response): Promise<voi
     res.json(result);
   } catch (err: any) {
     res.status(401).json({ error: 'Authentication Failed', message: err.message });
+  }
+});
+
+router.post('/auth/register/request-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { identifier, channel } = req.body;
+    if (!identifier) {
+      res.status(400).json({ error: 'Validation Error', message: 'Mobile number or Gmail address is required.' });
+      return;
+    }
+    res.json(await authService.requestRegistrationOtp({ identifier, channel }));
+  } catch (err: any) {
+    res.status(400).json({ error: 'Registration OTP failed', message: err.message });
+  }
+});
+
+router.post('/auth/register', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await authService.registerUser({ ...req.body, ipAddress: req.ip, userAgent: req.headers['user-agent'] });
+    res.status(201).json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: 'Registration failed', message: err.message });
   }
 });
 
